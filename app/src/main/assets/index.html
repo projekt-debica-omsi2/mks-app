@@ -2,23 +2,28 @@
 <html lang="pl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>MKS Dębica</title><link rel="stylesheet" href="style.css"></head>
 <body>
-<header class="top"><div class="brand-mark">🚌</div><div><div class="brand">MKS Dębica</div><div class="brand-note">Twój przewodnik po mieście</div></div><div id="networkDot" class="net" aria-label="Stan połączenia"></div></header>
+<header class="top"><div class="brand-mark"><img src="icons/bus-green.png" alt="" class="brand-symbol"></div><div><div class="brand">MKS Dębica</div><div class="brand-note">Twój przewodnik po mieście</div></div><div id="networkDot" class="net" aria-label="Stan połączenia"></div></header>
 <main id="app">
 <section id="screen-gps" class="screen active">
- <div class="heading"><div><div class="eyebrow">NA ŻYWO</div><h1>Gdzie jest autobus?</h1><p>Pozycje wyłącznie z serwera MKS, bez własnego proxy.</p></div><button id="refreshGps" class="icon-button" aria-label="Odśwież GPS">↻</button></div>
+ <div class="heading"><div><div class="eyebrow">NA ŻYWO</div><h1>Gdzie jest autobus?</h1><p>Pozycje wyłącznie z serwera MKS, bez własnego proxy.</p></div><button id="refreshGps" class="icon-button" aria-label="Odśwież GPS"><img src="icons/refresh-blue.png" alt="" class="refresh-symbol"></button></div>
  <div class="status" id="gpsStatus">Naciśnij „Odśwież GPS”, aby pobrać pozycje autobusów.</div>
+ <div class="action-row" style="margin:10px 0 15px;flex-wrap:wrap;gap:8px">
+   <button class="secondary" id="testGps">Sprawdź połączenie GPS</button>
+   <a class="secondary" href="https://mks.debica.pl/dla-pasazera/aplikacja-mybus/" style="text-decoration:none">Oficjalny myBus ↗</a>
+ </div>
+ <div class="status hidden" id="gpsTestStatus" aria-live="polite"></div>
  <div class="map-toolbar"><button id="mapMinus">−</button><button id="mapPlus">+</button><button id="mapHome">⌖ Dębica</button><select id="gpsLine" aria-label="Filtr linii"><option value="">Wszystkie linie</option></select></div>
  <div id="map" class="map" role="img" aria-label="Mapa autobusów i przystanków"><div class="map-canvas" id="mapCanvas"></div><div class="map-label">© OpenStreetMap contributors</div></div>
  <div class="section-title">Autobusy <span id="busCount"></span></div><div id="busList" class="cards"><div class="empty">Brak danych GPS. Odśwież, aby spróbować ponownie.</div></div>
- <p class="footnote">Mapa wymaga internetu. Gdy GPS nie odpowiada, aplikacja nie wymyśla pozycji. Dane rozkładowe działają offline.</p>
+ <p class="footnote">Pozycje autobusów pojawiają się wyłącznie po prawidłowej odpowiedzi serwera MKS. „Pobrano o” oznacza czas odczytu, a nie czas ostatniej aktualizacji GPS na pojeździe. Brak współrzędnych nie jest potwierdzeniem, że autobusy nie kursują.</p>
 </section>
 <section id="screen-stops" class="screen">
- <div class="heading"><div><div class="eyebrow">PRZYSTANKI</div><h1>Wybierz przystanek</h1><p>Rozkłady są zapisane w telefonie.</p></div><button id="nearest" class="primary small">⌖ Blisko mnie</button></div>
+ <div class="heading"><div><div class="eyebrow">PRZYSTANKI</div><h1>Wybierz przystanek</h1><p>Rozkłady offline są zapisaną kopią, nie aktualizują się automatycznie. <a href="http://rj.mks.debica.pl/">Oficjalne aktualne rozkłady ↗</a></p></div><button id="nearest" class="primary small">⌖ Blisko mnie</button></div>
  <input id="stopSearch" class="search" placeholder="Szukaj nazwy albo numeru przystanku…" autocomplete="off">
  <div class="two-line" id="stopCount"></div><div class="cards" id="stopList"></div>
 </section>
 <section id="screen-lines" class="screen">
- <div class="heading"><div><div class="eyebrow">LINIE</div><h1>Wszystkie linie MKS</h1><p>Wybierz linię, aby zobaczyć przystanki i kierunki.</p></div></div>
+ <div class="heading"><div><div class="eyebrow">LINIE</div><h1>Wszystkie linie MKS</h1><p>Lista pochodzi z kopii rozkładów. <a href="https://mks.debica.pl/">Sprawdź zmiany na stronie MKS ↗</a></p></div></div>
  <input id="lineSearch" class="search" placeholder="Szukaj linii…" autocomplete="off"><div id="lineList" class="cards"></div>
 </section>
 <section id="screen-plan" class="screen">
@@ -30,7 +35,7 @@
  <div class="cards" id="routeResults"></div>
 </section>
 <section id="screen-favs" class="screen">
- <div class="heading"><div><div class="eyebrow">TWOJE</div><h1>Ulubione</h1><p>Najczęściej używane przystanki.</p></div><button id="settingsButton" class="icon-button" aria-label="Ustawienia">⚙</button></div>
+ <div class="heading"><div><div class="eyebrow">TWOJE</div><h1>Ulubione</h1><p>Najczęściej używane przystanki.</p></div><button id="settingsButton" class="icon-button" aria-label="Ustawienia"><img src="icons/settings-gray.png" alt="" class="refresh-symbol"></button></div>
  <div class="cards" id="favsList"></div>
  <div id="settings" class="settings hidden"><h2>Ustawienia GPS</h2><p>Domyślnie aplikacja łączy się bezpośrednio z MKS. Poniższy adres jest używany wyłącznie po błędzie połączenia bezpośredniego.</p><label class="field-label" for="proxy">Zapasowe proxy (opcjonalne)</label><input id="proxy" class="input" placeholder="https://twoja-domena.pl/mks" autocomplete="off"><button class="primary small" id="saveProxy">Zapisz ustawienia</button><p class="footnote">Gdy nie masz działającego własnego serwera, zostaw to pole puste.</p></div>
 </section>
@@ -38,6 +43,12 @@
  <button id="detailBack" class="back">← Powrót</button><div id="detailBody"></div>
 </section>
 </main>
-<nav class="bottom" aria-label="Nawigacja"><button data-tab="gps" class="selected"><span>🗺</span>GPS</button><button data-tab="stops"><span>🚏</span>Przystanki</button><button data-tab="lines"><span>🚌</span>Linie</button><button data-tab="plan"><span>⇄</span>Przesiadki</button><button data-tab="favs"><span>★</span>Ulubione</button></nav>
+<nav class="bottom" aria-label="Nawigacja">
+ <button data-tab="gps" class="selected"><img class="tab-icon" src="icons/bus-green.png" alt="">GPS</button>
+ <button data-tab="stops"><img class="tab-icon" src="icons/stop-blue.png" alt="">Przystanki</button>
+ <button data-tab="lines"><img class="tab-icon" src="icons/line-arrow.png" alt="">Linie</button>
+ <button data-tab="plan"><img class="tab-icon" src="icons/transfer-green.png" alt="">Przesiadki</button>
+ <button data-tab="favs"><img class="tab-icon" src="icons/favourite-outline.png" alt="">Ulubione</button>
+</nav>
 <script src="data.js"></script><script src="app.js"></script>
 </body></html>

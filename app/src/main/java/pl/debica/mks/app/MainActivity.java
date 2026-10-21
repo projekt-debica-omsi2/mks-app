@@ -97,6 +97,27 @@ public class MainActivity extends Activity {
                 finally { gpsPending.set(false); }
             });
         }
+        @JavascriptInterface public void testGps() {
+            executor.execute(() -> {
+                JSONObject result = new JSONObject();
+                try {
+                    String body = httpGet(DIRECT_API + "PingService", CITY_TOKEN_SUM + 60);
+                    Document document = xml(body);
+                    String value = document.getDocumentElement().getTextContent().trim();
+                    int serverAge = Integer.parseInt(value);
+                    if (serverAge < 0 || serverAge > 99_999_999) throw new Exception("Nieprawidłowa wartość Age");
+                    result.put("ok", true);
+                    result.put("message", "Serwer odpowiada na PingService. Dostępność pozycji autobusów sprawdzana jest osobno.");
+                    result.put("serverTime", System.currentTimeMillis());
+                } catch (Exception ex) {
+                    try {
+                        result.put("ok", false);
+                        result.put("message", "Brak odpowiedzi PingService: " + (ex.getMessage() == null ? ex.getClass().getSimpleName() : ex.getMessage()));
+                    } catch (Exception ignored) { }
+                }
+                deliver("onMksGpsTest", result);
+            });
+        }
         @JavascriptInterface public void getLocation() { main.post(() -> requestLocation()); }
         @JavascriptInterface public void shareText(String value) {
             main.post(() -> {
@@ -114,7 +135,7 @@ public class MainActivity extends Activity {
     private JSONObject loadVehicles(String proxy) throws Exception {
         String directError;
         try { return vehiclesFrom(DIRECT_API, false); }
-        catch (Exception ex) { directError = ex.getMessage(); }
+        catch (Exception ex) { directError = ex.getMessage() == null ? ex.getClass().getSimpleName() : ex.getMessage(); }
         String fallback = proxy == null ? "" : proxy.trim();
         if (fallback.isEmpty()) {
             throw new Exception("GPS MKS niedostępny: " + directError + ". Rozkłady offline działają dalej.");
@@ -172,10 +193,12 @@ public class MainActivity extends Activity {
             bus.put("variant", node.getAttribute("wt"));
             bus.put("lat", lat);
             bus.put("lng", lng);
-            double delay = 0;
-            try { delay = Double.parseDouble(node.getAttribute("o").replace(',', '.')); }
-            catch (Exception ignored) { }
-            bus.put("delaySeconds", delay);
+            String delayRaw = node.getAttribute("o").trim();
+            if (delayRaw.isEmpty()) bus.put("delaySeconds", JSONObject.NULL);
+            else {
+                try { bus.put("delaySeconds", Double.parseDouble(delayRaw.replace(',', '.'))); }
+                catch (Exception ignored) { bus.put("delaySeconds", JSONObject.NULL); }
+            }
             array.put(bus);
         }
         JSONObject result = new JSONObject();
@@ -198,7 +221,7 @@ public class MainActivity extends Activity {
             conn.setRequestProperty("Accept", "application/xml, text/xml, */*");
             conn.setRequestProperty("Accept-Encoding", "identity");
             int status = conn.getResponseCode();
-            if (status != 200) throw new Exception("HTTP " + status);
+            if (status != 200) throw new Exception("API MKS zwróciło HTTP " + status + " (" + new URL(address).getPath() + ")");
             try (InputStream stream = conn.getInputStream(); ByteArrayOutputStream out = new ByteArrayOutputStream()) {
                 byte[] buffer = new byte[8192];
                 int count;
@@ -244,17 +267,24 @@ public class MainActivity extends Activity {
             if (mgr.isProviderEnabled(LocationManager.NETWORK_PROVIDER)) provider = LocationManager.NETWORK_PROVIDER;
             else if (mgr.isProviderEnabled(LocationManager.GPS_PROVIDER)) provider = LocationManager.GPS_PROVIDER;
             else { deliver("onMksLocation", failure("Włącz lokalizację w telefonie")); return; }
+            final AtomicBoolean locationPending = new AtomicBoolean(true);
             final LocationListener listener = new LocationListener() {
                 @Override public void onLocationChanged(Location location) {
                     mgr.removeUpdates(this);
-                    emitLocation(location);
+                    if (locationPending.compareAndSet(true, false)) emitLocation(location);
                 }
                 @Override public void onProviderDisabled(String disabled) {
-                    deliver("onMksLocation", failure("Włącz lokalizację w telefonie"));
+                    mgr.removeUpdates(this);
+                    if (locationPending.compareAndSet(true, false))
+                        deliver("onMksLocation", failure("Włącz lokalizację w telefonie"));
                 }
             };
             mgr.requestLocationUpdates(provider, 1000, 0, listener, Looper.getMainLooper());
-            main.postDelayed(() -> mgr.removeUpdates(listener), 15000);
+            main.postDelayed(() -> {
+                mgr.removeUpdates(listener);
+                if (locationPending.compareAndSet(true, false))
+                    deliver("onMksLocation", failure("Brak ustalenia położenia telefonu przez 15 s. Włącz GPS, wyjdź na zewnątrz i spróbuj ponownie."));
+            }, 15000);
         } catch (Exception ex) { deliver("onMksLocation", failure(ex.getMessage())); }
     }
     private void emitLocation(Location loc) {

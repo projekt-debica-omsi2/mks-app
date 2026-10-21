@@ -34,7 +34,7 @@ jobs:
           gradle-version: '8.10.2'
 
       - name: Test spójności projektu i rozkładów
-        run: node scripts/check-data.js && node scripts/check-project.js
+        run: node scripts/check-data.js && node scripts/check-project.js && node scripts/check-assets.js
 
       - name: Zbuduj APK
         run: gradle --no-daemon --stacktrace :app:assembleDebug

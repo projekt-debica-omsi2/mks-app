@@ -1,4 +1,10 @@
-# MKS Dębica 2.0 — kompletny projekt Android do GitHub Actions
+# MKS Dębica 2.2.0 — ikony z APK myBus
+
+Wersja projektu z włączonymi ikonami wyodrębnionymi z `mybus.apk` przekazanego przez użytkownika. Ikony są użyte w nawigacji, kartach przystanków, mapie i ustawieniach. **Grafiki nie zapewniają dostępu do GPS**; działanie bezpośredniego API MKS pozostaje do testu na telefonie.
+
+Dokładna lista ikon i uwagi o prawach do grafik: [`ASSETY_Z_MYBUS.md`](ASSETY_Z_MYBUS.md).
+
+# MKS Dębica 2.1 — diagnostyka GPS i jasne źródła danych — kompletny projekt Android do GitHub Actions
 
 To **nieoficjalna** aplikacja pasażerska. To pełny projekt Android, nie gotowe APK.
 
@@ -41,3 +47,18 @@ W tym środowisku nie ma lokalnego Android SDK i Gradle, więc rzeczywista kompi
 - GitHub Actions: `android-actions/setup-android@v4` z `packages: platform-tools`, bez wycofanego pakietu `tools`.
 - Dane źródłowe w `data/`; zasoby do uruchomienia w `app/src/main/assets/`.
 - APK debug służy do testów i jest podpisywany kluczem debug GitHub Runnera; nie jest to podpisany pakiet do Google Play.
+
+## Weryfikacja danych w wersji 2.1
+
+**Wbudowane godziny odjazdów nie są automatycznie aktualizowane**. To kopia danych użytkownika. Na każdej tabliczce znajduje się link do oficjalnej strony, a na ekranach przystanków i linii znajdują się linki do operatora MKS. Nie opisuj lokalnej kopii jako rozkładu na żywo.
+
+**Pozycje autobusów GPS**: aplikacja najpierw wykonuje PingService, potem GetVehicles na oryginalnym API MKS. Nowy przycisk „Sprawdź połączenie GPS” pozwala rozróżnić niedostępność samego serwera od braku zwróconych pozycji pojazdów. Wynik PingService nie jest dowodem, że GetVehicles zwróci autobusy. Bez działającego API nie można zagwarantować pozycji w aplikacji.
+
+Oficjalny myBus dla MKS Dębica: https://mks.debica.pl/dla-pasazera/aplikacja-mybus/
+Rozkłady operatora: http://rj.mks.debica.pl/
+
+Podczas testu APK w telefonie otwórz GPS → „Sprawdź połączenie GPS”, a następnie „Odśwież GPS”. Zanotuj oba komunikaty. W razie problemów połączenia z serwerem, jego odpowiedź musi zostać zdiagnozowana z sieci telefonu; żaden lokalny test projektu nie może potwierdzić niezależnie działania operatora.
+
+Wersja 2.1 poprawia również pokazywanie nieznanego opóźnienia: wcześniej brak pola `o` był pokazywany jako 0 minut, co mogło być nieprawdą.
+
+Geolokalizacja telefonu: gdy Android nie uzyska współrzędnych przez 15 sekund, aplikacja pokaże konkretny komunikat zamiast czekać bez końca. Linki do oficjalnych tabliczek otwierają zewnętrzną przeglądarkę.
