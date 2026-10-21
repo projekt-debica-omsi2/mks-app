@@ -1,57 +1,43 @@
-# MKS Dębica — aplikacja Android APK
+# MKS Dębica 2.0 — kompletny projekt Android do GitHub Actions
 
-Nieoficjalna aplikacja pasażerska na Androida, przygotowana na podstawie przesłanych plików. **Nie wymaga Android Studio ani własnego komputera do budowania:** GitHub Actions automatycznie kompiluje APK.
+To **nieoficjalna** aplikacja pasażerska. To pełny projekt Android, nie gotowe APK.
 
-## Jak zbudować APK na GitHubie
+## Najprościej: wymiana całego projektu przez GitHub Desktop
 
-1. Utwórz **nowe repozytorium** na github.com (np. `MKS-Debica`).
-2. Rozpakuj `MKS-Debica-Android.zip` i prześlij **całą zawartość folderu** do katalogu głównego repozytorium, łącznie z ukrytym katalogiem `.github`. Możesz użyć przycisku **Add file → Upload files**. Commit do gałęzi `main`.
-3. Otwórz **Actions → Zbuduj APK MKS Debica**. Po pierwszym przesłaniu workflow uruchomi się na `main` samodzielnie; można też kliknąć **Run workflow**.
-4. Po zielonym zakończeniu zadania otwórz jego stronę, na dole pobierz artefakt **MKS-Debica-APK**, rozpakuj go i zainstaluj **`app-debug.apk`** na telefonie.
-5. Telefon może poprosić o zezwolenie na instalację aplikacji z tego źródła. Jest to **APK debug do instalacji prywatnej/testowej**, a nie podpisana produkcyjna paczka do Google Play.
+1. Rozpakuj pobrany ZIP `MKS-Debica-KOMPLET-GitHub.zip`.
+2. W GitHub Desktop wybierz repozytorium `projekt-debica-omsi2/mks-app`, potem **Repository → Show in Explorer**.
+3. **Nie usuwaj ukrytego folderu `.git`!** Z katalogu repozytorium usuń stare pliki projektu, ALE pozostaw `.git`.
+4. Skopiuj do repozytorium **całą zawartość** rozpakowanego folderu `MKS-Debica-KOMPLET-GitHub`, włącznie z ukrytym `.github`.
+5. W GitHub Desktop: wpisz nazwę zmiany, **Commit to main**, a potem **Push origin**.
+6. Otwórz https://github.com/projekt-debica-omsi2/mks-app/actions. Wybierz **Zbuduj APK MKS Debica**. Budowanie wystartuje po `Push origin`, można też użyć **Run workflow**.
+7. Jeżeli zadanie skończy się zielonym znakiem, w jego części **Artifacts** pobierz **MKS-Debica-APK**. Po rozpakowaniu otrzymasz `app-debug.apk` do prywatnego testu na Androidzie.
 
-W katalogu głównym znajdują się `settings.gradle`, `build.gradle`, `gradle.properties` oraz `app/`. Workflow jest w `.github/workflows/android-apk.yml`. Używa Gradle 8.10.2, JDK 17 i Android SDK 35; **nie potrzebuje lokalnego wrappera Gradle**.
+**Ważne:** Nie wgrywaj ZIP-a jako jednego pliku do repozytorium. GitHub musi zobaczyć pliki projektu, w tym `.github/workflows/android-apk.yml` i `app/` w katalogu głównym.
 
 ## Funkcje
 
-- **GPS autobusów**: pobieranie aktualnych pozycji z oryginalnego API myBus MKS Dębica; opcjonalny zapasowy pośrednik PHP; odświeżanie co 25 sekund, gdy ekran GPS jest aktywny; numer linii, numer pojazdu, kierunek (gdy API zwróci), opóźnienie; informacja o nieaktualnych danych w przypadku błędu.
-- **Mapa**: kafelki OpenStreetMap, przeciąganie, przybliżanie, filtry linii, pojazdy i na większym przybliżeniu przystanki. Kafelki wymagają internetu.
-- **374 przystanki**: szukanie po nazwie i numerze, opcjonalna lokalizacja telefonu / najbliższe, ulubione.
-- **14 linii**: wyszukiwanie linii i kierunku, przystanki w każdym kierunku (porządek alfabetyczny, a nie trasa przejazdu).
-- **812 tabliczek**: wszystkie zapisane godziny, podział na robocze, robocze wakacyjne/feryjne, soboty i niedziele/święta; link do oryginalnej tabliczki; udostępnianie. Dane rozkładowe działają offline.
-- **Przesiadki**: wskazanie wspólnej linii lub przystanku przesiadkowego na podstawie wspólnych grup linia/kierunek; **wyniki orientacyjne**, bez weryfikacji kolejności przejazdu, czasu jazdy ani zgodności godzin konkretnych kursów. To nie jest pełny planner tras GTFS.
+- **374 przystanki**, wyszukiwanie numerów i nazw, najbliższe przystanki przez lokalizację telefonu.
+- **14 linii**, kierunki oraz lista przystanków *alfabetycznie* (brak wiarygodnej sekwencji przejazdu w danych).
+- **812 tabliczek odjazdów** w czterech wariantach: roboczy, roboczy wakacyjny/feryjny, sobota, niedziele/święta. Wszystkie działają offline.
+- **GPS autobusów**: natywne żądania Android do `rj.mks.debica.pl/AndroidService/SchedulesService.svc` z `PingService` / `GetVehicles` i nagłówkiem `Age`. Najpierw bezpośrednio, potem opcjonalne ręcznie podane proxy. Dane są odświeżane co 25 s, gdy jest otwarty widok GPS.
+- **Mapa**: kafelki OpenStreetMap pobierane przez internet; jeśli brak internetu, podkład ulic może być niewidoczny. Stosuj zasady OpenStreetMap tile usage policy, zwłaszcza jeśli aplikacja miałaby być masowo publikowana.
+- **Przesiadki**: jedynie **orientacyjne** połączenia na podstawie linii wspólnych dla przystanków. Nie ma gwarancji trasy, kierunku, czasu przejazdu ani zgodności kursów.
+- Ulubione, udostępnianie godzin, zapasowe proxy w ustawieniach (domyślnie puste).
 
-## GPS bezpośrednio z MKS — bez własnego serwera (v1.1.0)
+## Co jest zweryfikowane, a co nie
 
-**Nie trzeba mieć działającego `e-dębica.pl:8088` ani żadnego proxy.** APK łączy się bezpośrednio z oryginalnym API MKS Dębica, ustawionym na stałe w aplikacji:
+Sprawdzane są spójność 374/14/812 rekordów oraz składnia JavaScript i struktura konfiguracji Android/GitHub Actions przez `node scripts/check-data.js && node scripts/check-project.js`.
 
-`http://rj.mks.debica.pl/AndroidService/SchedulesService.svc/`
+Nie twierdzimy, że prawdziwe pozycje GPS już działają: dostępność oryginalnego API myBus **nie została potwierdzona na telefonie** i zależy od serwera MKS. Starszy endpoint działa przez nieszyfrowany HTTP; przy udostępnianiu aplikacji szerszej grupie warto przejść na HTTPS. Dane rozkładów pochodzą z dostarczonej kopii i nie aktualizują się automatycznie.
 
-Natywny kod Android (Java, `HttpURLConnection`) odpytuje `PingService`, pobiera wartość potrzebną do nagłówka `Age`, a następnie wykonuje `GetVehicles`. Żądania wysyłane są z telefonu, nie przez WebView, więc nie wymagają CORS. Pozycje pochodzą wyłącznie z odpowiedzi serwera; aplikacja nie generuje fałszywych danych.
+Projekt zawiera autorską zielono-żółtą ikonę autobusu. **Nie jest to oficjalny znak MKS**.
 
-Odświeżanie GPS następuje co 25 sekund, gdy otwarty jest ekran mapy. Jeśli serwer MKS nie odpowiada, pokazywany jest błąd; poprzednia pozycja jest oznaczana jako nieaktualna. **Dostępność zewnętrznego API MKS nie została potwierdzona na żywym urządzeniu.** Starsze API korzysta z HTTP i może być niedostępne z niektórych sieci lub ograniczone po stronie operatora.
+W tym środowisku nie ma lokalnego Android SDK i Gradle, więc rzeczywista kompilacja APK nie została wykonana lokalnie. Sprawdzi ją GitHub Actions po wrzuceniu projektu. Jeśli pojawi się inny błąd, jego log z zakładki Actions pokaże dokładny następny problem.
 
-W ustawieniach jest opcjonalne pole **Zapasowy proxy PHP** (domyślnie puste). Jeśli właściciel używa własnego proxy i poda jego adres, aplikacja spróbuje połączenia zapasowego **dopiero po błędzie połączenia bezpośredniego**. Jeżeli własny serwer jest wyłączony, jego brak nie wpływa na działanie rozkładów, mapy i wyszukiwarki. Pierwszy start świeżo zainstalowanej aplikacji nie używa e-dębica.pl:8088. Jeśli aktualizujesz starszą wersję, jej domyślny adres 8088 jest automatycznie ignorowany; inne świadomie wpisane adresy zachowano.
+## Parametry techniczne
 
-Dołączony folder `server/` jest tylko opcją dla kogoś, kto chce wdrożyć własny proxy, i nie jest potrzebny do zbudowania APK.
-
-## Ważne ograniczenia
-
-- Zapisane tabliczki są **kopią danych z przesłanych plików** i nie aktualizują się automatycznie. Oznaczenia kursów były puste w przesłanej kopii. W dzień świąteczny i ferie wybierz ręcznie właściwy typ rozkładu (aplikacja rozpoznaje tylko dzień tygodnia).
-- Przesłana baza nie zawiera poprawnej sekwencji wszystkich kursów i ich czasów przejazdu pomiędzy przystankami, dlatego propozycje przesiadek nie mogą być traktowane jako gwarantowane połączenia.
-- Aktualna pozycja telefonu służy wyłącznie lokalnie do obliczenia odległości do przystanków — aplikacja nie wysyła jej do proxy.
-- Aplikacja posiada autorską ikonę zielono-żółtego autobusu z napisem MKS DĘBICA. **Nie jest to zweryfikowany oficjalny logotyp operatora**. Źródło: `icon-source.png`; można zastąpić pliki `res/mipmap-*/ic_launcher*.png` po uzyskaniu właściwego logo i zgody na jego użycie.
-- Na potrzeby bezpośredniego połączenia ze starszym, nieszyfrowanym API MKS w manifeście włączono ruch HTTP. Zalecany wariant produkcyjny to własne proxy **HTTPS** i usunięcie bezpośredniego HTTP.
-
-## Uruchomienie lokalne / modyfikacje
-
-Do lokalnej kompilacji potrzeba JDK 17, Android SDK z platformą 35 i Gradle 8.10.2:
-
-```bash
-gradle :app:assembleDebug
-```
-
-Do modyfikacji interfejsu: `app/src/main/assets/index.html`, `style.css`, `app.js`. Dane rozkładów: `data.js` (generowany z plików użytkownika). Natywna obsługa HTTP/GPS: `app/src/main/java/pl/debica/mks/app/MainActivity.java`.
-
-Kontrola danych przed kompilacją: `node scripts/check-data.js`.
-
+- `applicationId`: `pl.debica.mks.app`, `versionName`: `2.0.0`, `versionCode`: `4`
+- Android 7.0+, Java 17, Android Gradle Plugin 8.7.3, Gradle 8.10.2, SDK 35.
+- GitHub Actions: `android-actions/setup-android@v4` z `packages: platform-tools`, bez wycofanego pakietu `tools`.
+- Dane źródłowe w `data/`; zasoby do uruchomienia w `app/src/main/assets/`.
+- APK debug służy do testów i jest podpisywany kluczem debug GitHub Runnera; nie jest to podpisany pakiet do Google Play.

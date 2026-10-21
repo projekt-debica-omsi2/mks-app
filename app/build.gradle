@@ -3,20 +3,14 @@ plugins { id 'com.android.application' }
 android {
     namespace 'pl.debica.mks.app'
     compileSdk 35
-
     defaultConfig {
         applicationId 'pl.debica.mks.app'
         minSdk 24
         targetSdk 35
-        versionCode 3
-        versionName '1.1.0'
+        versionCode 4
+        versionName '2.0.0'
     }
-
-    buildTypes {
-        release {
-            minifyEnabled false
-        }
-    }
+    buildTypes { release { minifyEnabled false } }
     compileOptions {
         sourceCompatibility JavaVersion.VERSION_17
         targetCompatibility JavaVersion.VERSION_17

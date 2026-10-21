@@ -1,269 +1,52 @@
-/* MKS Dębica — interfejs i statyczne dane, bez zewnętrznych bibliotek JavaScript. */
 (() => {
 'use strict';
-const stops = window.MKS_STOPS || [];
-const boards = window.MKS_SCHEDULES || [];
-const DAYS = ['Roboczy','Roboczy wakacyjny/feryjny','Sobota','Niedziele i święta'];
+const stops = Array.isArray(window.MKS_STOPS) ? window.MKS_STOPS : [];
+const boards = (window.MKS_BOARDS && Array.isArray(window.MKS_BOARDS.conn)) ? window.MKS_BOARDS.conn : [];
 const $ = id => document.getElementById(id);
-const escapeHtml = s => String(s ?? '').replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-const norm = value => String(value||'').toLocaleLowerCase('pl').normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/ł/g,'l').replace(/[^a-z0-9]+/g,' ').trim();
-const getStore = (key, fallback) => {try{const v=localStorage.getItem(key);return v===null?fallback:JSON.parse(v)}catch(_){return fallback}};
-const setStore = (key,value) => {try{localStorage.setItem(key,JSON.stringify(value))}catch(_){}};
-let favs = new Set(getStore('mks_favourites_v1', []));
-let currentScreen = 'live', activeStop = null, gpsTimer = null;
-let currentVehicles = [], lastFetched=0, lastPosition=null, lineFilter='all', stopMode='all', currentLineDetail=null;
-// GPS korzysta najpierw BEZPOŚREDNIO z API MKS. Proxy to tylko opcjonalne źródło zapasowe.
-// Zachowaj wcześniejszy własny adres użytkownika, ale nie wymuszaj starego portu 8088.
-const previousProxy = getStore('mks_proxy_v1','');
-let proxy = getStore('mks_proxy_fallback_v2',
-  previousProxy === 'http://e-dębica.pl:8088' ? '' : previousProxy);
-
-const byNumber=new Map(stops.map(s=>[String(s.number),s]));
-const byStop=new Map(), byLine=new Map(), routes=new Map();
-for(const b of boards){
-  const sn=String(b.stop_number), line=String(b.line);
-  if(!byStop.has(sn))byStop.set(sn,[]);byStop.get(sn).push(b);
-  if(!byLine.has(line))byLine.set(line,[]);byLine.get(line).push(b);
-  const k=b.routeId+'|'+b.dir;
-  if(!routes.has(k))routes.set(k,{id:k,line,dir:b.dir,stops:new Set(),directions:new Set()});
-  routes.get(k).stops.add(sn);routes.get(k).directions.add(b.direction);
-}
-const lines=[...byLine.keys()].sort((a,b)=>Number(a)-Number(b));
-function toast(message){const e=$('toast');e.textContent=message;e.classList.remove('hidden');clearTimeout(toast.timer);toast.timer=setTimeout(()=>e.classList.add('hidden'),3200)}
-function formatDistance(m){return m<1000?Math.round(m)+' m':(m/1000).toFixed(1)+' km'}
-function distance(a,b){const r=Math.PI/180, x=(a.lng-b.lng)*r*Math.cos((a.lat+b.lat)/2*r),y=(a.lat-b.lat)*r;return Math.sqrt(x*x+y*y)*6371000}
-function dayNow(){const n=new Date().getDay();return n===6?DAYS[2]:n===0?DAYS[3]:DAYS[0]}
-let chosenDay=dayNow();
-function startNav(id){
-  if(!['live','stops','lines','route','favs','settings'].includes(id))return;
-  currentScreen=id;
-  for(const el of document.querySelectorAll('.screen'))el.classList.toggle('active',el.id==='screen-'+id);
-  for(const el of document.querySelectorAll('#nav button'))el.classList.toggle('chosen',el.dataset.screen===id);
-  window.scrollTo(0,0);
-  if(id==='live'){renderMap();scheduleGps();}else{clearInterval(gpsTimer);gpsTimer=null;}
-  if(id==='stops')renderStops();if(id==='favs')renderFavs();if(id==='lines')renderLines();
-}
-for(const nav of document.querySelectorAll('#nav button'))nav.addEventListener('click',()=>{closeBoard();currentLineDetail=null;startNav(nav.dataset.screen)});
-function stopRow(s,extra=''){
-  const sn=String(s.number), count=new Set((byStop.get(sn)||[]).map(b=>b.line)).size;
-  return `<button class="item" data-stop="${escapeHtml(sn)}"><div class="left"><div class="tag stop-tag">${escapeHtml(sn)}</div><div><strong>${escapeHtml(s.name)}</strong><div class="sub">${count} ${count===1?'linia':'linii'}${extra?' • '+escapeHtml(extra):''}</div></div></div><span class="chevron">›</span></button>`;
-}
-function bindStopButtons(container){container.querySelectorAll('[data-stop]').forEach(e=>e.addEventListener('click',()=>openBoard(e.dataset.stop)))}
-function renderStops(){
-  const q=norm($('stopSearch').value);
-  let all=stops.filter(s=>norm(s.name+' '+s.number).includes(q));
-  if(stopMode==='near'){
-    if(lastPosition)all.sort((a,b)=>distance(a,lastPosition)-distance(b,lastPosition));
-    else stopMode='all';
-  }else all.sort((a,b)=>a.name.localeCompare(b.name,'pl',{numeric:true}));
-  $('stopMatches').textContent=all.length+' przyst.';
-  const subset=all;
-  $('stopsList').innerHTML=subset.length?subset.map(s=>stopRow(s,stopMode==='near'&&lastPosition?formatDistance(distance(s,lastPosition)):'' )).join(''):'<div class="empty">Nie znaleziono przystanku.</div>';
-  bindStopButtons($('stopsList'));
-}
-$('stopSearch').addEventListener('input',()=>renderStops());
-$('nearestBtn').addEventListener('click',()=>{stopMode='near';startNav('stops');getLocation()});
-$('allStopsBtn').addEventListener('click',()=>{stopMode='all';renderStops()});
-$('locateTop').addEventListener('click',()=>{stopMode='near';startNav('stops');getLocation()});
-function getLocation(){
-  if(window.MksAndroid){window.MksAndroid.getLocation();}
-  else if(navigator.geolocation)navigator.geolocation.getCurrentPosition(p=>window.onMksLocation({ok:true,lat:p.coords.latitude,lng:p.coords.longitude}),()=>toast('Nie uzyskano lokalizacji'));
-  else toast('Lokalizacja dostępna na urządzeniu z GPS');
-}
-window.onMksLocation=result=>{
-  if(!result.ok){toast(result.error||'Lokalizacja niedostępna');return}
-  lastPosition={lat:result.lat,lng:result.lng};
-  if(stopMode==='near')renderStops();renderMap();
-  toast('Znaleziono lokalizację — odległości są orientacyjne');
-};
-function renderLines(){
-  const el=$('linesList');
-  if(currentLineDetail){
-    const line=currentLineDetail, all=byLine.get(line)||[], groups=new Map();
-    for(const b of all){const key=b.dir+' / '+b.direction;if(!groups.has(key))groups.set(key,[]);groups.get(key).push(b)}
-    el.className='list';el.innerHTML=`<button class="small-btn" id="backToLines">← Wszystkie linie</button><div class="card"><h2>Linia ${escapeHtml(line)}</h2><div class="muted">Wykaz przystanków w poszczególnych kierunkach. Kolejność alfabetyczna — to nie jest kolejność przejazdu.</div></div>`+
-      [...groups.entries()].map(([direction,entries])=>`<div class="card"><h3>Kierunek ${escapeHtml(direction.split(' / ').slice(1).join(' / '))}</h3><div class="list">${[...new Map(entries.map(b=>[b.stop_number,b])).values()].sort((a,b)=>a.stop_name.localeCompare(b.stop_name,'pl')).map(b=>stopRow(byNumber.get(String(b.stop_number))||{number:b.stop_number,name:b.stop_name})).join('')}</div></div>`).join('');
-    $('backToLines').addEventListener('click',()=>{currentLineDetail=null;renderLines()});bindStopButtons(el);return;
-  }
-  const q=norm($('lineSearch').value);el.className='grid-lines';
-  el.innerHTML=lines.filter(l=>norm(l+' '+byLine.get(l).map(e=>e.direction).join(' ')).includes(q)).map(l=>{
-    const b=byLine.get(l),dest=[...new Set(b.map(x=>x.direction))].slice(0,2);
-    return `<button class="line-card" data-line="${escapeHtml(l)}"><div class="line-number">${escapeHtml(l)}</div><div class="dest">${escapeHtml(dest.join(' / '))}</div><div class="sub">${new Set(b.map(e=>e.stop_number)).size} przystanków</div></button>`;
-  }).join('')||'<div class="empty">Nie znaleziono linii.</div>';
-  el.querySelectorAll('[data-line]').forEach(e=>e.addEventListener('click',()=>{currentLineDetail=e.dataset.line;renderLines();window.scrollTo(0,0)}));
-}
-$('lineSearch').addEventListener('input',()=>{currentLineDetail=null;renderLines()});
-function currentClock(){const n=new Date();return String(n.getHours()).padStart(2,'0')+':'+String(n.getMinutes()).padStart(2,'0')}
-function openBoard(number){
-  const s=byNumber.get(String(number));if(!s)return;
-  activeStop=String(number);
-  $('boardTitle').textContent=s.name;
-  $('boardSubtitle').textContent='Przystanek nr '+s.number+' • '+(byStop.get(activeStop)||[]).length+' tabliczek';
-  $('dayType').value=chosenDay;
-  $('stopOverlay').classList.remove('hidden');
-  renderBoard();
-}
-function closeBoard(){$('stopOverlay').classList.add('hidden');activeStop=null}
-$('closeBoard').addEventListener('click',closeBoard);
-$('stopOverlay').addEventListener('click',e=>{if(e.target.id==='stopOverlay')closeBoard()});
-$('dayType').addEventListener('change',()=>{chosenDay=$('dayType').value;renderBoard()});
-function renderBoard(){
-  if(!activeStop)return;
-  const arr=(byStop.get(activeStop)||[]).sort((a,b)=>Number(a.line)-Number(b.line));
-  const today=dayNow()===chosenDay,now=currentClock();
-  $('boardFavorite').textContent=favs.has(activeStop)?'★ Ulubiony':'☆ Ulubiony';
-  $('boardDepartures').innerHTML=arr.map(b=>{
-    const times=b.sections?.[chosenDay]||[];
-    return `<div class="board-group"><div class="board-group-header"><b>${escapeHtml(b.line)}</b><span class="heading">${escapeHtml(b.direction)}</span><a href="${escapeHtml(b.url)}" class="external-link">WWW ↗</a></div><div class="departures">${times.length?times.map(t=>`<span class="departure ${today&&t.time>=now?'next':''}">${escapeHtml(t.time)}${t.mark?'<small>'+escapeHtml(t.mark)+'</small>':''}</span>`).join(''):'<span class="muted">Brak kursów tego dnia</span>'}</div></div>`;
-  }).join('')||'<div class="empty">Brak danych rozkładowych dla tego przystanku.</div>';
-  $('boardDepartures').querySelectorAll('.external-link').forEach(a=>a.setAttribute('target','_blank'));
-}
-$('boardFavorite').addEventListener('click',()=>{
-  if(!activeStop)return;
-  if(favs.has(activeStop))favs.delete(activeStop);else favs.add(activeStop);
-  setStore('mks_favourites_v1',[...favs]);renderBoard();renderFavs();
-});
-$('boardShare').addEventListener('click',()=>{
-  const s=byNumber.get(activeStop);if(!s)return;
-  const out=['MKS Dębica — '+s.name+' (#'+s.number+')',chosenDay];
-  for(const b of (byStop.get(activeStop)||[]))out.push('Linia '+b.line+' → '+b.direction+': '+(b.sections?.[chosenDay]||[]).map(x=>x.time+(x.mark||'')).join(', '));
-  out.push('Godziny z zapisanej kopii rozkładów — przed podróżą sprawdź aktualność.');
-  if(window.MksAndroid)window.MksAndroid.shareText(out.join('\n'));
-  else if(navigator.clipboard)navigator.clipboard.writeText(out.join('\n')).then(()=>toast('Skopiowano tabliczkę'));
-  else toast('Udostępnianie dostępne w aplikacji');
-});
-function renderFavs(){const sl=stops.filter(s=>favs.has(String(s.number))).sort((a,b)=>a.name.localeCompare(b.name,'pl'));
- $('favsList').innerHTML=sl.length?sl.map(s=>stopRow(s)).join(''):'<div class="empty">Brak ulubionych. Otwórz przystanek i dotknij ☆ Ulubiony.</div>';bindStopButtons($('favsList'));}
-function getStopFromInput(v){const n=norm(v),nNumber=v.match(/^#?(\d+)$/);return stops.find(s=>norm(s.name+' (#'+s.number+')')===n)||stops.find(s=>norm(s.name)===n)|| (nNumber?byNumber.get(nNumber[1]):null) || null}
-function planJourney(){
- const from=getStopFromInput($('routeFrom').value),to=getStopFromInput($('routeTo').value),target=$('routeResults');
- if(!from||!to){target.innerHTML='<div class="empty">Wybierz przystanki z listy podpowiedzi, wpisując pełną nazwę lub numer.</div>';return}
- if(from.number===to.number){target.innerHTML='<div class="empty">Początek i cel to ten sam przystanek.</div>';return}
- const a=String(from.number),b=String(to.number),rs=[...routes.values()];
- const starts=rs.filter(r=>r.stops.has(a)),ends=rs.filter(r=>r.stops.has(b));
- const direct=starts.filter(r=>r.stops.has(b));
- const results=[];
- const uniqueD=new Set();
- for(const d of direct){const key=d.line+'|'+d.dir;if(uniqueD.has(key))continue;uniqueD.add(key);
-  results.push({kind:'direct',a:d,score:0});}
- const candidate=[];
- for(const first of starts)for(const second of ends){if(first.id===second.id)continue;
-   if(first.line===second.line)continue;
-   for(const mid of first.stops){if(!second.stops.has(mid)||mid===a||mid===b)continue;
-      const stop=byNumber.get(mid);if(!stop)continue;
-      const ratio=(distance(from,stop)+distance(stop,to))/Math.max(distance(from,to),1);
-      candidate.push({kind:'transfer',a:first,b:second,mid,score:ratio});
-   }
- }
- candidate.sort((x,y)=>x.score-y.score);
- const seen=new Set();
- for(const c of candidate){const key=c.a.line+'|'+c.b.line+'|'+c.mid;if(seen.has(key))continue;seen.add(key);results.push(c);if(results.length>=10)break}
- target.innerHTML=results.length?`<div class="section-head"><h2>Propozycje połączeń</h2><span class="muted">${results.length} propozycji</span></div>`+
- results.map(r=>{
-  if(r.kind==='direct')return `<div class="trip-card"><div class="trip-head"><span class="tag">${escapeHtml(r.a.line)}</span><b>Bez przesiadki — możliwa linia wspólna</b></div><div class="trip-leg">${escapeHtml(from.name)} → ${escapeHtml(to.name)}<br>Sprawdź kierunek oraz godzinę na tabliczce.</div><button class="small-btn" data-stop="${escapeHtml(a)}">Rozkład startu</button></div>`;
-  const mid=byNumber.get(r.mid);
-  return `<div class="trip-card"><div class="trip-head"><span class="tag">${escapeHtml(r.a.line)}</span>→<span class="tag">${escapeHtml(r.b.line)}</span><b class="transfer">1 możliwa przesiadka</b></div><div class="trip-leg">Start: ${escapeHtml(from.name)}<br>Przesiadka: <b>${escapeHtml(mid.name)}</b> (#${escapeHtml(r.mid)})<br>Cel: ${escapeHtml(to.name)}</div><button class="small-btn" data-stop="${escapeHtml(r.mid)}">Sprawdź rozkład przesiadki</button></div>`;
- }).join(''):'<div class="empty">Nie znaleziono wspólnej linii ani przystanku przesiadkowego w zapisanej bazie.</div>';
- bindStopButtons(target);
-}
-for(const s of stops){const o=document.createElement('option');o.value=s.name+' (#'+s.number+')';$('allStopNames').appendChild(o)}
-$('planBtn').addEventListener('click',planJourney);
-$('swapStops').addEventListener('click',()=>{const a=$('routeFrom').value;$('routeFrom').value=$('routeTo').value;$('routeTo').value=a;planJourney()});
-// GPS: pozycje pochodzą wyłącznie z odpowiedzi oryginalnego API, bez symulacji.
-function scheduleGps(){if(gpsTimer)return;refreshGps();gpsTimer=setInterval(()=>{if(currentScreen==='live')refreshGps()},25000)}
-function refreshGps(){
- $('liveStatus').classList.remove('bad');$('liveStatus').textContent='◌ Łączenie bezpośrednio z MKS…';
- if(window.MksAndroid)window.MksAndroid.refreshGps(proxy);
- else window.onMksGps({ok:false,error:'GPS działa w wersji Android po zbudowaniu APK.'});
-}
-window.onMksGps=data=>{
- if(!data.ok){
-  $('liveStatus').classList.remove('ok');$('liveStatus').classList.add('bad');
-  $('liveStatus').textContent='⚠ GPS niedostępny: '+(data.error||'błąd serwera');
-  if(lastFetched)$('lastGps').textContent='Ostatnie dane nieaktualne • '+new Date(lastFetched).toLocaleTimeString('pl-PL');
-  return;
- }
- lastFetched=data.fetchedAt||Date.now();
- const old=new Map(currentVehicles.map(v=>[v.id,v]));
- currentVehicles=(data.vehicles||[]).map(v=>({ ...v,
-  line:v.line||old.get(v.id)?.line||'?',direction:v.direction||old.get(v.id)?.direction||'brak danych' }));
- $('liveStatus').classList.remove('bad');$('liveStatus').classList.add('ok');
- $('liveStatus').textContent='● GPS '+(data.source||'MKS')+' • aktualizacja '+new Date(lastFetched).toLocaleTimeString('pl-PL');
- $('lastGps').textContent=new Date(lastFetched).toLocaleTimeString('pl-PL');
- renderGpsFilters();renderVehicles();renderMap();
-};
-function renderGpsFilters(){const keys=[...new Set(currentVehicles.map(v=>v.line))].sort((a,b)=>Number(a)-Number(b));
- if(lineFilter!=='all'&&!keys.includes(lineFilter))lineFilter='all';
- $('liveFilters').innerHTML=['all',...keys].map(l=>`<button class="pill ${lineFilter===l?'selected':''}" data-filter="${escapeHtml(l)}">${l==='all'?'Wszystkie':escapeHtml(l)}</button>`).join('');
- $('liveFilters').querySelectorAll('button').forEach(b=>b.addEventListener('click',()=>{lineFilter=b.dataset.filter;renderGpsFilters();renderVehicles();renderMap()}));
-}
-function visibleVehicles(){return currentVehicles.filter(v=>lineFilter==='all'||v.line===lineFilter)}
-function renderVehicles(){
- const vv=visibleVehicles();$('vehicleCount').textContent=vv.length;
- $('vehicleList').innerHTML=vv.length?vv.map(v=>`<button class="item" data-vehicle="${escapeHtml(v.id)}"><div class="left"><div class="tag">${escapeHtml(v.line||'?')}</div><div><strong>Autobus ${escapeHtml(v.number||v.id)}</strong><div class="sub">${escapeHtml(v.direction||'brak kierunku')} • ${formatDelaySeconds(v.delaySeconds)}</div></div></div><span class="chevron">⌖</span></button>`).join(''):'<div class="empty">Brak pojazdów dla wybranej linii lub brak danych GPS.</div>';
- $('vehicleList').querySelectorAll('[data-vehicle]').forEach(e=>e.addEventListener('click',()=>{const v=currentVehicles.find(x=>x.id===e.dataset.vehicle);if(v){mapCenter={lat:v.lat,lng:v.lng};mapZoom=15;renderMap();window.scrollTo({top:$('mksMap').getBoundingClientRect().top+window.scrollY-92,behavior:'smooth'});toast('Linia '+v.line+' • autobus '+(v.number||v.id))}}));
-}
-function formatDelaySeconds(seconds){const n=Math.round(Number(seconds)||0);return n===0?'wg GPS: bez opóźnienia':(n>0?'opóźnienie ':'przyspieszenie ')+Math.round(Math.abs(n)/60)+' min'}
-$('gpsRefresh').addEventListener('click',refreshGps);
-// Mapa kafelkowa OpenStreetMap: lokalny silnik projekcji Web Mercator.
-const map=$('mksMap');let mapCenter={lat:50.05135,lng:21.41127},mapZoom=12;
-const tileSize=256;const clamp=(x,a,b)=>Math.max(a,Math.min(b,x));
-const tx=(lng,z)=>(lng+180)/360*tileSize*2**z;
-const ty=(lat,z)=>(1-Math.log(Math.tan(clamp(lat,-85.05,85.05)*Math.PI/180)+1/Math.cos(clamp(lat,-85.05,85.05)*Math.PI/180))/Math.PI)/2*tileSize*2**z;
-const ll=(x,y,z)=>{const size=tileSize*2**z,lng=x/size*360-180, lat=Math.atan(Math.sinh(Math.PI*(1-2*y/size)))*180/Math.PI;return{lat,lng}};
-function renderMap(){
- if(currentScreen!=='live')return;
- const w=map.clientWidth,h=map.clientHeight,z=mapZoom;
- if(!w||!h)return;
- const x=tx(mapCenter.lng,z)-w/2, y=ty(mapCenter.lat,z)-h/2, max=2**z;
- let tiles='';
- for(let xx=Math.floor(x/256);xx<=Math.floor((x+w)/256);xx++)for(let yy=Math.floor(y/256);yy<=Math.floor((y+h)/256);yy++){
-   if(yy<0||yy>=max)continue;
-   const tileX=(xx%max+max)%max, left=Math.floor(xx*256-x),top=Math.floor(yy*256-y);
-   tiles+=`<img class="tile" loading="lazy" draggable="false" style="left:${left}px;top:${top}px" src="https://tile.openstreetmap.org/${z}/${tileX}/${yy}.png" alt="">`;
- }
- $('mapTiles').innerHTML=tiles;
- let markers='';
- if(z>=14){for(const s of stops){if(s.lng==null||s.lat==null)continue;
-  const l=tx(s.lng,z)-x,t=ty(s.lat,z)-y;
-  if(l>=0&&l<=w&&t>=0&&t<=h)markers+=`<button class="pin stop-pin" data-stop="${escapeHtml(s.number)}" title="${escapeHtml(s.name)}" style="left:${l}px;top:${t}px"></button>`;
- }}
- for(const v of visibleVehicles()){
-   if(!Number.isFinite(v.lat)||!Number.isFinite(v.lng))continue;
-   const l=tx(v.lng,z)-x,t=ty(v.lat,z)-y;
-   if(l>=-25&&l<=w+25&&t>=0&&t<=h+25)markers+=`<button class="pin" data-vehicle="${escapeHtml(v.id)}" title="Linia ${escapeHtml(v.line)} · ${escapeHtml(v.direction)}" style="left:${l}px;top:${t}px">${escapeHtml(v.line)}</button>`;
- }
- if(lastPosition){const l=tx(lastPosition.lng,z)-x,t=ty(lastPosition.lat,z)-y;
-  if(l>=0&&l<=w&&t>=0&&t<=h)markers+=`<div class="pin user-pin" style="left:${l}px;top:${t}px" title="Twoja pozycja"></div>`;
- }
- $('mapMarkers').innerHTML=markers;
- $('mapMarkers').querySelectorAll('[data-stop]').forEach(e=>e.addEventListener('click',()=>openBoard(e.dataset.stop)));
- $('mapMarkers').querySelectorAll('[data-vehicle]').forEach(e=>e.addEventListener('click',()=>{
-   const v=currentVehicles.find(x=>x.id===e.dataset.vehicle);if(v)toast('Autobus '+(v.number||v.id)+' • linia '+v.line+' → '+v.direction);
- }));
-}
-function zoomBy(value){mapZoom=clamp(mapZoom+value,9,18);renderMap()}
-$('zoomIn').addEventListener('click',()=>zoomBy(1));$('zoomOut').addEventListener('click',()=>zoomBy(-1));
-$('mapHome').addEventListener('click',()=>{mapCenter={lat:50.05135,lng:21.41127};mapZoom=12;renderMap()});
-let drag=null;
-map.addEventListener('pointerdown',e=>{if(e.target.closest('button,a'))return;drag={px:e.clientX,py:e.clientY,lon:mapCenter.lng,lat:mapCenter.lat};map.setPointerCapture(e.pointerId)});
-map.addEventListener('pointermove',e=>{if(!drag)return;
- const nx=tx(drag.lon,mapZoom)-(e.clientX-drag.px),ny=ty(drag.lat,mapZoom)-(e.clientY-drag.py);
- mapCenter=ll(nx,ny,mapZoom);mapCenter.lat=clamp(mapCenter.lat,-85,85);renderMap();
-});
-map.addEventListener('pointerup',()=>drag=null);map.addEventListener('pointercancel',()=>drag=null);
-map.addEventListener('wheel',e=>{e.preventDefault();zoomBy(e.deltaY<0?1:-1)},{passive:false});
-window.addEventListener('resize',()=>renderMap());
-// Ustawienia
-$('proxyInput').value=proxy;
-$('saveProxy').addEventListener('click',()=>{
- const raw=$('proxyInput').value.trim();
- if(raw&&(!/^https?:\/\//i.test(raw)||/\s/.test(raw))){toast('Adres musi zaczynać się od http:// lub https://');return}
- proxy=raw.replace(/\/+$/,'');setStore('mks_proxy_fallback_v2',proxy);$('proxyFeedback').textContent=proxy?'Zapisano zapasowe proxy. Sprawdzam GPS bezpośrednio z MKS…':'Zapasowe proxy wyłączone. Sprawdzam GPS bezpośrednio z MKS…';
- startNav('live');refreshGps();
-});
-$('dataCounts').textContent=stops.length+' przystanków, '+lines.length+' linii, '+boards.length+' tabliczek';
-window.mksBack=()=>{if(activeStop){closeBoard();return}if(currentLineDetail){currentLineDetail=null;renderLines();return}if(currentScreen!=='live')startNav('live');else if(window.MksAndroid)window.MksAndroid.closeApp();else toast('Jesteś na ekranie głównym')};
-renderGpsFilters();renderStops();renderLines();renderFavs();
-setTimeout(scheduleGps,700);
+const escape = value => String(value ?? '').replace(/[&<>"']/g, v => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[v]));
+const norm = s => String(s || '').toLocaleLowerCase('pl').normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/ł/g,'l');
+const unique = arr => Array.from(new Set(arr));
+const boardByStop = new Map(), stopById = new Map(), boardsByLine = new Map();
+stops.forEach(s => {stopById.set(String(s.number),s); boardByStop.set(String(s.number),[]);});
+boards.forEach(b => {const id=String(b.stop_number), line=String(b.line);if(!boardByStop.has(id))boardByStop.set(id,[]);boardByStop.get(id).push(b);if(!boardsByLine.has(line))boardsByLine.set(line,[]);boardsByLine.get(line).push(b);});
+const lines = Array.from(boardsByLine.keys()).sort((a,b)=>a.localeCompare(b,'pl',{numeric:true}));
+const read = (key, fallback) => {try{const value=localStorage.getItem(key);return value===null?fallback:JSON.parse(value);}catch(_){return fallback;}};
+const put = (key,value) => {try{localStorage.setItem(key,JSON.stringify(value));}catch(_){}};
+const state = { tab:'gps', previous:'stops', stop:null, line:null, favs:read('mks_favs_v2',[]),proxy:read('mks_proxy_fallback_v2',''),buses:[],gpsAt:0,gpsError:null,gpsFresh:false,user:null,mapLat:50.052,mapLng:21.410,mapZoom:13,mapDrag:null,activeLine:'' };
+const dayTypes=['Roboczy','Roboczy wakacyjny/feryjny','Sobota','Niedziele i święta'];
+function defaultDay(){const d=(new Date()).getDay();return d===0?3:d===6?2:0;}
+let pickedDay=defaultDay();
+function geoDistance(a,b,c,d){const R=6371,rad=Math.PI/180;const dl=(c-a)*rad,dy=(d-b)*rad;const v=Math.sin(dl/2)**2+Math.cos(a*rad)*Math.cos(c*rad)*Math.sin(dy/2)**2;return R*2*Math.atan2(Math.sqrt(v),Math.sqrt(1-v));}
+function numStop(s){return s?('#'+escape(s.number)):'—';}
+function stopLineNames(id){return unique((boardByStop.get(String(id))||[]).map(b=>String(b.line))).sort((a,b)=>a.localeCompare(b,'pl',{numeric:true}));}
+function stopCard(s){const n=stopLineNames(s.number),fav=state.favs.includes(String(s.number));const distance=state.user?geoDistance(state.user.lat,state.user.lng,s.lat,s.lng):null;return `<article class="card clickable" data-stop="${escape(s.number)}"><div class="row"><div><div class="card-title">${escape(s.name)}</div><div class="sub">Przystanek ${numStop(s)}${distance!==null?' · '+distance.toFixed(2)+' km':''}</div></div><button class="heart" data-fav="${escape(s.number)}" aria-label="Ulubiony">${fav?'★':'☆'}</button></div><div>${n.slice(0,10).map(l=>`<span class="chip">Linia ${escape(l)}</span>`).join('')}${n.length>10?`<span class="chip">+${n.length-10}</span>`:''}</div></article>`;}
+function setTab(tab){if(!['gps','stops','lines','plan','favs','detail'].includes(tab))return;state.tab=tab;document.querySelectorAll('.screen').forEach(el=>el.classList.toggle('active',el.id==='screen-'+tab));document.querySelectorAll('.bottom [data-tab]').forEach(el=>el.classList.toggle('selected',el.dataset.tab===tab));if(tab==='gps')renderMap();if(tab==='stops')renderStops();if(tab==='lines')renderLines();if(tab==='favs')renderFavs();if(tab==='plan')renderPlanSelects();window.scrollTo(0,0);}
+function openStop(id){const stop=stopById.get(String(id));if(!stop)return;state.previous=state.tab==='detail'?state.previous:state.tab;state.stop=String(id);state.line=null;renderDetail();setTab('detail');}
+function openLine(line){state.previous=state.tab==='detail'?state.previous:state.tab;state.line=String(line);state.stop=null;renderDetail();setTab('detail');}
+function renderStops(){const q=norm($('stopSearch').value.trim());let found=stops.filter(s=>norm(s.name+' '+s.number).includes(q));if(state.user&&!q){found=found.slice().sort((a,b)=>geoDistance(state.user.lat,state.user.lng,a.lat,a.lng)-geoDistance(state.user.lat,state.user.lng,b.lat,b.lng));}else found.sort((a,b)=>a.name.localeCompare(b.name,'pl',{numeric:true}));$('stopCount').textContent=`${found.length} z ${stops.length} przystanków${state.user&&!q?' · najbliższe na początku':''}`;$('stopList').innerHTML=found.slice(0,120).map(stopCard).join('')||'<div class="empty">Nie znaleziono przystanku.</div>';if(found.length>120)$('stopList').insertAdjacentHTML('beforeend','<div class="two-line">Wpisz fragment nazwy, żeby zobaczyć dalsze przystanki.</div>');}
+function renderLines(){const q=norm($('lineSearch').value);const matches=lines.filter(l=>norm(l).includes(q));$('lineList').innerHTML=matches.map(l=>{const b=boardsByLine.get(l)||[];return `<article class="card clickable" data-line="${escape(l)}"><div class="row"><div><span class="line-badge">${escape(l)}</span> <strong>Linia ${escape(l)}</strong></div><span class="pill">${unique(b.map(x=>x.stop_number)).length} przyst.</span></div><div class="sub">Kierunki: ${escape(unique(b.map(x=>x.direction)).filter(Boolean).slice(0,3).join(' • ')||'brak danych')}</div></article>`;}).join('')||'<div class="empty">Nie znaleziono linii.</div>';}
+function renderFavs(){const fav=state.favs.map(id=>stopById.get(String(id))).filter(Boolean);$('favsList').innerHTML=fav.map(stopCard).join('')||'<div class="empty">Jeszcze nie masz ulubionych. Wejdź w „Przystanki” i naciśnij ☆ przy wybranym przystanku.</div>';}
+function toggleFav(id){const i=state.favs.indexOf(String(id));if(i===-1)state.favs.push(String(id));else state.favs.splice(i,1);put('mks_favs_v2',state.favs);if(state.tab==='detail')renderDetail();else if(state.tab==='favs')renderFavs();else if(state.tab==='stops')renderStops();}
+function availableMinutes(b){const sections=b.sections||{};return sections[dayTypes[pickedDay]]||[];}
+function renderDetail(){if(state.stop){const s=stopById.get(state.stop),entries=(boardByStop.get(state.stop)||[]).sort((a,b)=>a.line.localeCompare(b.line,'pl',{numeric:true}));$('detailBody').innerHTML=`<div class="detail-header"><div class="eyebrow">TABLICZKA PRZYSTANKOWA</div><h1>${escape(s.name)}</h1><div class="sub">Przystanek ${numStop(s)} · ${entries.length} tabliczek</div><div class="action-row" style="margin-top:15px"><button class="secondary" data-fav="${escape(s.number)}">${state.favs.includes(state.stop)?'★ Usuń z ulubionych':'☆ Dodaj do ulubionych'}</button><button class="secondary" data-share="${escape(s.number)}">Udostępnij</button></div></div><label class="field-label" for="daySelect">Rodzaj dnia (święta i ferie wybierz ręcznie)</label><select id="daySelect" class="input">${dayTypes.map((v,i)=>`<option value="${i}"${i===pickedDay?' selected':''}>${escape(v)}</option>`).join('')}</select><div id="boardsHere"></div>`;renderBoardsHere(entries);return;}
+if(state.line){const b=(boardsByLine.get(state.line)||[]);const byDirection=new Map();b.forEach(item=>{const dir=item.direction||'Bez określonego kierunku';if(!byDirection.has(dir))byDirection.set(dir,new Set());byDirection.get(dir).add(item.stop_number);});$('detailBody').innerHTML=`<div class="detail-header"><div class="eyebrow">LINIA MKS</div><h1>Linia ${escape(state.line)}</h1><p>Przystanki na podstawie tabliczek — <b>kolejność alfabetyczna, nie trasa jazdy.</b></p></div>${Array.from(byDirection).map(([dir,ids])=>`<div class="section-title">→ ${escape(dir)} <span>${ids.size} przystanków</span></div><div class="table">${Array.from(ids).map(id=>stopById.get(id)).filter(Boolean).sort((a,b)=>a.name.localeCompare(b.name,'pl')).map(s=>`<div class="tr clickable" data-stop="${escape(s.number)}"><strong>${escape(s.name)}</strong><small>${numStop(s)} ›</small></div>`).join('')}</div>`).join('')}`;}}
+function renderBoardsHere(entries){$('boardsHere').innerHTML=entries.map((b,i)=>{const times=availableMinutes(b);return `<div class="card" style="margin-bottom:11px"><div class="row"><div><span class="line-badge">${escape(b.line)}</span> <strong>→ ${escape(b.direction)}</strong></div><span class="pill">${times.length} odjazdów</span></div><div class="sub">${escape(dayTypes[pickedDay])}</div><div class="times">${times.length?times.map(t=>`<span class="time">${escape(t.time)}${t.mark?' '+escape(t.mark):''}</span>`).join(''):'<span class="sub">Brak odjazdów w tym typie dnia.</span>'}</div><div class="action-row"><a class="secondary" style="text-decoration:none" href="${escape(b.url)}" target="_blank" rel="noopener">Oficjalna tabliczka ↗</a></div></div>`;}).join('')||'<div class="empty">Brak tabliczek w zapisanej bazie.</div>';}
+function renderPlanSelects(){const selector=stops.slice().sort((a,b)=>a.name.localeCompare(b.name,'pl'));const options='<option value="">Wybierz przystanek</option>'+selector.map(s=>`<option value="${escape(s.number)}">${escape(s.name)} (#${escape(s.number)})</option>`).join('');for(const id of ['fromStop','toStop']){const select=$(id),old=select.value;select.innerHTML=options;select.value=old;}}
+function planRoute(){const start=$('fromStop').value,end=$('toStop').value;if(!start||!end){$('routeResults').innerHTML='<div class="empty">Wybierz oba przystanki.</div>';return;}if(start===end){$('routeResults').innerHTML='<div class="empty">Początek i koniec to ten sam przystanek.</div>';return;}const a=stopLineNames(start),b=stopLineNames(end),direct=a.filter(x=>b.includes(x));let results=[];for(const line of direct.slice(0,6))results.push(`<div class="card"><div class="card-title"><span class="line-badge">${escape(line)}</span> Możliwy przejazd bez przesiadki</div><div class="sub">Linia ma tabliczki na obu przystankach, ale kierunek przejazdu nie jest tutaj potwierdzony.</div><button class="secondary" data-line="${escape(line)}">Pokaż linię</button></div>`);if(!results.length){const suggestions=[];for(const l1 of a){const stopIds=new Set((boardsByLine.get(l1)||[]).map(x=>x.stop_number));for(const l2 of b){if(l1===l2)continue;const transfer=(boardsByLine.get(l2)||[]).find(x=>stopIds.has(x.stop_number)&&x.stop_number!==start&&x.stop_number!==end);if(transfer){const s=stopById.get(transfer.stop_number);if(s)suggestions.push({l1,l2,s});}}}const keys=new Set();for(const x of suggestions){const key=[x.l1,x.l2,x.s.number].join('|');if(keys.has(key))continue;keys.add(key);results.push(`<div class="card"><div class="card-title"><span class="line-badge">${escape(x.l1)}</span> ⇄ <span class="line-badge">${escape(x.l2)}</span></div><div class="sub">Możliwy punkt przesiadki: <b>${escape(x.s.name)}</b>. Nie sprawdzono godzin ani kolejności kursów.</div><button class="secondary" data-stop="${escape(x.s.number)}">Rozkład na przesiadce</button></div>`);if(results.length>=8)break;}}
+$('routeResults').innerHTML=results.length?results.join(''):'<div class="empty">Brak potwierdzonych wspólnych linii ani orientacyjnego punktu przesiadki w tej bazie. Sprawdź oficjalny rozkład MKS.</div>';}
+function networkLocation(){if(!window.MksAndroid){$('gpsStatus').textContent='GPS na żywo dostępny w aplikacji Android. W podglądzie przeglądarkowym dostępne są rozkłady offline.';return;}window.MksAndroid.getLocation();}
+window.onMksLocation=result=>{if(!result || !result.ok){$('stopCount').textContent=result&&result.error?result.error:'Nie można pobrać lokalizacji';return;}state.user={lat:result.lat,lng:result.lng};state.mapLat=result.lat;state.mapLng=result.lng;state.mapZoom=15;renderMap();renderStops();setTab('stops');};
+function refreshGps(){if(!window.MksAndroid){setGpsStatus('Odświeżanie GPS wymaga uruchomienia APK na telefonie.','error');return;}setGpsStatus('Łączenie bezpośrednio z MKS…','loading');window.MksAndroid.refreshGps(state.proxy||'');}
+function setGpsStatus(message,style=''){const el=$('gpsStatus');el.className='status '+style;el.textContent=message;}
+window.onMksGps=payload=>{if(!payload || !payload.ok){state.gpsFresh=false;state.gpsError=String(payload&&payload.error||'Błąd pobierania GPS');setGpsStatus('GPS niedostępny: '+state.gpsError+(state.gpsAt?' · ostatnie pozycje są NIEAKTUALNE':''),'error');}else{state.buses=Array.isArray(payload.vehicles)?payload.vehicles:[];state.gpsAt=Number(payload.fetchedAt)||Date.now();state.gpsError=null;state.gpsFresh=true;const at=new Date(state.gpsAt).toLocaleTimeString('pl-PL');setGpsStatus(`Pobrano ${state.buses.length} autobusów o ${at} · źródło: ${payload.source||'MKS'}.`);}renderBusList();renderMap();};
+function renderBusList(){const buses=state.buses.filter(b=>!state.activeLine||b.line===state.activeLine);$('busCount').textContent=`${buses.length}${state.gpsFresh?' na żywo':' · nieaktualne'}`;if(!buses.length){$('busList').innerHTML='<div class="empty">Brak pozycji autobusów dla wybranego filtra.</div>';return;}$('busList').innerHTML=buses.slice(0,80).map((b,i)=>`<article class="card clickable" data-bus="${escape(b.id)}"><div class="row"><div><div class="card-title"><span class="line-badge">${escape(b.line||'?')}</span> Autobus ${escape(b.number||b.id)}</div><div class="sub">${escape(b.direction||'Kierunek nieznany')} · ${Number.isFinite(Number(b.delaySeconds))?'opóźnienie '+Math.round(Number(b.delaySeconds)/60)+' min':'brak danych'}</div></div><span class="pill">${state.gpsFresh?'GPS':'stare'}</span></div></article>`).join('');}
+const tileSize=256;
+function project(lat,lng,z){const n=2**z,rad=lat*Math.PI/180;return {x:(lng+180)/360*n*tileSize,y:(1-Math.log(Math.tan(rad)+1/Math.cos(rad))/Math.PI)/2*n*tileSize};}
+function inverse(x,y,z){const n=2**z;return {lng:x/(n*tileSize)*360-180,lat:Math.atan(Math.sinh(Math.PI*(1-2*y/(n*tileSize))))*180/Math.PI};}
+function renderMap(){const view=$('map'),layer=$('mapCanvas');if(!view||!layer||state.tab!=='gps')return;const w=view.clientWidth,h=view.clientHeight,z=state.mapZoom,center=project(state.mapLat,state.mapLng,z);let output='';const world=2**z;const minX=Math.floor((center.x-w/2)/256),maxX=Math.floor((center.x+w/2)/256),minY=Math.floor((center.y-h/2)/256),maxY=Math.floor((center.y+h/2)/256);for(let xx=minX;xx<=maxX;xx++)for(let yy=minY;yy<=maxY;yy++){if(yy<0||yy>=world)continue;const tx=(xx+world)%world,px=xx*256-center.x+w/2,py=yy*256-center.y+h/2;output+=`<img class="tile" loading="lazy" alt="" draggable="false" src="https://tile.openstreetmap.org/${z}/${tx}/${yy}.png" style="left:${px}px;top:${py}px" onerror="this.style.visibility='hidden'">`;}const pin=(lat,lng)=>{const p=project(lat,lng,z);return {x:p.x-center.x+w/2,y:p.y-center.y+h/2};};if(z>=14){for(const s of stops.slice(0,374)){const q=pin(s.lat,s.lng);if(q.x>-5&&q.x<w+5&&q.y>-5&&q.y<h+5)output+=`<button class="marker stop" title="${escape(s.name)}" data-stop="${escape(s.number)}" style="left:${q.x}px;top:${q.y}px"></button>`;}}for(const b of state.buses){if(state.activeLine&&b.line!==state.activeLine)continue;const q=pin(b.lat,b.lng);if(q.x<-30||q.x>w+30||q.y<-30||q.y>h+30)continue;output+=`<button class="marker bus ${state.gpsFresh?'':'offline'}" data-bus="${escape(b.id)}" title="Autobus ${escape(b.number||b.id)}" style="left:${q.x}px;top:${q.y}px">${escape(b.line||'🚌')}</button>`;}if(state.user){const q=pin(state.user.lat,state.user.lng);output+=`<div class="marker user" title="Twoja lokalizacja" style="left:${q.x}px;top:${q.y}px"></div>`;}layer.innerHTML=output;}
+function focusBus(id){const bus=state.buses.find(b=>String(b.id)===String(id));if(!bus)return;state.mapLat=Number(bus.lat);state.mapLng=Number(bus.lng);state.mapZoom=Math.max(15,state.mapZoom);renderMap();const list=$('busList');if(list)list.scrollIntoView({behavior:'smooth',block:'start'});}
+function initMapDrag(){const map=$('map');map.addEventListener('pointerdown',e=>{if(e.target.closest('.marker'))return;state.mapDrag={x:e.clientX,y:e.clientY,lat:state.mapLat,lng:state.mapLng};map.setPointerCapture(e.pointerId);});map.addEventListener('pointermove',e=>{if(!state.mapDrag)return;const start=project(state.mapDrag.lat,state.mapDrag.lng,state.mapZoom);const coords=inverse(start.x-(e.clientX-state.mapDrag.x),start.y-(e.clientY-state.mapDrag.y),state.mapZoom);state.mapLat=Math.max(-85,Math.min(85,coords.lat));state.mapLng=coords.lng;renderMap();});map.addEventListener('pointerup',()=>{state.mapDrag=null;});map.addEventListener('pointercancel',()=>{state.mapDrag=null;});}
+function init(){if(!stops.length||!boards.length){setGpsStatus('Brak danych offline w pakiecie.','error');return;}lines.forEach(line=>{$('gpsLine').insertAdjacentHTML('beforeend',`<option value="${escape(line)}">${escape(line)}</option>`);});$('gpsLine').addEventListener('change',e=>{state.activeLine=e.target.value;renderBusList();renderMap();});document.querySelectorAll('[data-tab]').forEach(x=>x.addEventListener('click',()=>setTab(x.dataset.tab)));$('stopSearch').addEventListener('input',renderStops);$('lineSearch').addEventListener('input',renderLines);$('nearest').addEventListener('click',networkLocation);$('refreshGps').addEventListener('click',refreshGps);$('findRoute').addEventListener('click',planRoute);$('detailBack').addEventListener('click',()=>setTab(state.previous));$('settingsButton').addEventListener('click',()=>$('settings').classList.toggle('hidden'));$('proxy').value=state.proxy;$('saveProxy').addEventListener('click',()=>{state.proxy=$('proxy').value.trim();put('mks_proxy_fallback_v2',state.proxy);$('settings').classList.add('hidden');});$('mapMinus').addEventListener('click',()=>{state.mapZoom=Math.max(9,state.mapZoom-1);renderMap();});$('mapPlus').addEventListener('click',()=>{state.mapZoom=Math.min(17,state.mapZoom+1);renderMap();});$('mapHome').addEventListener('click',()=>{state.mapLat=50.052;state.mapLng=21.410;state.mapZoom=13;renderMap();});$('detailBody').addEventListener('change',e=>{if(e.target.id==='daySelect'){pickedDay=Number(e.target.value)||0;renderDetail();}});document.body.addEventListener('click',e=>{const heart=e.target.closest('[data-fav]');if(heart){e.stopPropagation();toggleFav(heart.dataset.fav);return;}const share=e.target.closest('[data-share]');if(share){const s=stopById.get(share.dataset.share);const entries=boardByStop.get(share.dataset.share)||[];const content=s.name+' (#'+s.number+')\n'+entries.map(b=>'Linia '+b.line+' → '+b.direction+'\n'+availableMinutes(b).map(v=>v.time).join(', ')).join('\n');if(window.MksAndroid)window.MksAndroid.shareText(content);else if(navigator.clipboard)navigator.clipboard.writeText(content);return;}const stop=e.target.closest('[data-stop]');if(stop){openStop(stop.dataset.stop);return;}const line=e.target.closest('[data-line]');if(line){openLine(line.dataset.line);return;}const bus=e.target.closest('[data-bus]');if(bus){focusBus(bus.dataset.bus);return;}});initMapDrag();renderStops();renderLines();renderFavs();renderPlanSelects();renderBusList();renderMap();window.addEventListener('resize',renderMap);window.setInterval(()=>{if(state.tab==='gps'&&window.MksAndroid)refreshGps();},25000);if(window.MksAndroid)refreshGps();}
+window.mksBack=()=>{if(state.tab==='detail')setTab(state.previous);else if(state.tab!=='gps')setTab('gps');else if(window.MksAndroid)window.MksAndroid.closeApp();};
+init();
 })();

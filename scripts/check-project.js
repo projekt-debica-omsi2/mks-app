@@ -1,0 +1,31 @@
+const fs = require('fs');
+const vm = require('vm');
+const path = require('path');
+const root=path.resolve(__dirname, '..');
+const load=p=>fs.readFileSync(path.join(root,p),'utf8');
+const workflow=load('.github/workflows/android-apk.yml');
+const java=load('app/src/main/java/pl/debica/mks/app/MainActivity.java');
+const manifest=load('app/src/main/AndroidManifest.xml');
+const html=load('app/src/main/assets/index.html');
+const js=load('app/src/main/assets/app.js');
+new vm.Script(js,{filename:'app.js'});
+if(!workflow.includes('android-actions/setup-android@v4')||!workflow.includes("packages: 'platform-tools'"))throw Error('SDK action przestarzałe');
+if(!workflow.includes('upload-artifact@v4')||!workflow.includes('app-debug.apk'))throw Error('Brak wydania APK');
+if(!java.includes('return vehiclesFrom(DIRECT_API, false)')||!java.includes('PingService')||!java.includes('GetVehicles'))throw Error('Brak natywnego API GPS MKS');
+if(!java.includes('setRequestProperty("Age"'))throw Error('Brak nagłówka Age');
+if(!manifest.includes('android.permission.INTERNET')||!manifest.includes('android:usesCleartextTraffic="true"'))throw Error('Brak uprawnień HTTP');
+for (const f of ['data.js','style.css','app.js']) if(!html.includes('"'+f+'"'))throw Error('HTML nie ładuje '+f);
+// Symulacja startu JS z minimalnym modelem DOM bez Androida i bez dostępu do sieci.
+function MockElement(){this.value='';this.innerHTML='';this.textContent='';this.clientWidth=360;this.clientHeight=340;this.dataset={};this.className='';this.classList={add(){},remove(){},toggle(){},contains(){return false;}};}
+MockElement.prototype.addEventListener=function(){};
+MockElement.prototype.insertAdjacentHTML=function(){};
+MockElement.prototype.scrollIntoView=function(){};
+const elements = new Map();
+const document = {body:new MockElement(),getElementById(id){if(!elements.has(id))elements.set(id,new MockElement());return elements.get(id);},querySelectorAll(){return [];}};
+const context = {window:{}, document, localStorage:{getItem(){return null;},setItem(){}}, navigator:{onLine:false},console,Date,Number,Math,Array,Set,Map,JSON};
+context.window={document,localStorage:context.localStorage,navigator:context.navigator,setInterval(){},addEventListener(){},scrollTo(){},};
+vm.createContext(context);
+vm.runInContext(load('app/src/main/assets/data.js'),context,{timeout:5000});
+vm.runInContext(js,context,{timeout:5000});
+if(!context.window.mksBack)throw Error('Brak obsługi przycisku Wstecz');
+console.log('OK: workflow, UI, uruchomienie JS, połączenie bezpośrednie GPS');
