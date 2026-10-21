@@ -1,0 +1,45 @@
+<!DOCTYPE html><html lang="pl"><head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#093125"><title>MKS Dębica — GPS i rozkłady</title>
+<link rel="stylesheet" href="style.css"><script src="data.js"></script><script src="app.js" defer></script>
+</head><body>
+<header class="top"><div class="brand"><div class="brand-icon"><span>🚌</span></div><div><strong>MKS <span>Dębica</span></strong><small>Twój transport, Twoje miasto</small></div></div><button class="circle" id="locateTop" aria-label="Pokaż najbliższe przystanki">⌖</button></header>
+<main>
+<section id="screen-live" class="screen active">
+  <div class="hero"><div class="eyebrow">TRANSPORT NA ŻYWO</div><h1>Gdzie jest mój autobus?</h1><p>Sprawdzaj pozycje pojazdów na mapie.</p><div class="status" id="liveStatus">◯ Oczekiwanie na dane GPS</div></div>
+  <div class="section-head"><h2>Mapa autobusów</h2><button id="gpsRefresh" class="small-btn">↻ Odśwież</button></div>
+  <div class="line-pills" id="liveFilters"></div>
+  <div class="map" id="mksMap"><div id="mapTiles"></div><div id="mapMarkers"></div><div class="map-controls"><button id="zoomIn" aria-label="Przybliż">+</button><button id="zoomOut" aria-label="Oddal">−</button><button id="mapHome" aria-label="Środek Dębicy">⌖</button></div><div class="map-credit">© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a></div></div>
+  <div class="section-head"><h2>Autobusy <span id="vehicleCount" class="count">0</span></h2><span class="muted" id="lastGps"></span></div>
+  <div id="vehicleList" class="list"><div class="empty">Pozycje pojawią się po bezpośrednim połączeniu z MKS.</div></div>
+</section>
+<section id="screen-stops" class="screen">
+  <div class="page-title"><div class="eyebrow">374 PRZYSTANKI</div><h1>Przystanki</h1><p>Rozkłady, odjazdy i tabliczki.</p></div>
+  <div class="search-wrap"><span>⌕</span><input id="stopSearch" placeholder="Szukaj nazwy lub numeru…" autocomplete="off"></div>
+  <div class="tools"><button id="nearestBtn" class="small-btn">⌖ Najbliższe</button><button id="allStopsBtn" class="small-btn">Wszystkie A–Z</button><span id="stopMatches" class="muted"></span></div>
+  <div id="stopsList" class="list"></div>
+</section>
+<section id="screen-lines" class="screen">
+  <div class="page-title"><div class="eyebrow">SIEĆ POŁĄCZEŃ</div><h1>Linie MKS</h1><p>Sprawdź, które linie zatrzymują się na wybranym przystanku.</p></div>
+  <div class="search-wrap"><span>⌕</span><input id="lineSearch" placeholder="Szukaj numeru linii lub kierunku…"></div>
+  <div id="linesList" class="grid-lines"></div>
+</section>
+<section id="screen-route" class="screen">
+  <div class="page-title"><div class="eyebrow">ZAPLANUJ PODRÓŻ</div><h1>Dokąd jedziesz?</h1><p>Znajdź wspólne linie lub punkt przesiadki.</p></div>
+  <div class="card planner"><label>Przystanek początkowy<input id="routeFrom" list="allStopNames" placeholder="Wpisz przystanek startowy" autocomplete="off"></label><div class="swap-row"><button id="swapStops" class="circle inline" title="Zamień przystanki">⇅</button></div><label>Przystanek docelowy<input id="routeTo" list="allStopNames" placeholder="Wpisz cel podróży" autocomplete="off"></label><datalist id="allStopNames"></datalist><button id="planBtn" class="primary">Znajdź połączenie →</button></div>
+  <div class="info-note">Propozycje na podstawie wspólnych linii i przystanków. Dane nie zawierają kolejności przystanków ani pełnych kursów, dlatego przed podróżą sprawdź właściwy kierunek i godziny. Wynik nie gwarantuje przesiadki.</div>
+  <div id="routeResults" class="list"></div>
+</section>
+<section id="screen-favs" class="screen">
+  <div class="page-title"><div class="eyebrow">SZYBKI DOSTĘP</div><h1>Ulubione</h1><p>Twoje przystanki pod ręką.</p></div><div id="favsList" class="list"></div>
+</section>
+<section id="screen-settings" class="screen">
+  <div class="page-title"><div class="eyebrow">KONFIGURACJA</div><h1>Ustawienia</h1><p>Źródło GPS i informacje o aplikacji.</p></div>
+  <div class="card settings"><h3>GPS bez własnego serwera</h3><p><b>Połączenie bezpośrednie z MKS</b> jest zawsze pierwszym wyborem. Nie trzeba włączać e-dębica.pl:8088 ani instalować skryptów PHP. Gdy serwer MKS nie odpowiada, GPS może być chwilowo niedostępny — rozkłady w aplikacji pozostają dostępne.</p><label>Opcjonalny zapasowy proxy PHP<input id="proxyInput" type="url" placeholder="https://twoja-domena.pl/mks (opcjonalnie)" inputmode="url"></label><p>Jeśli masz własny działający proxy, wpisz adres katalogu z <b>mks-api-bridge.php</b>. Aplikacja spróbuje użyć proxy <b>tylko wtedy</b>, gdy połączenie bezpośrednie z MKS się nie uda. Pozostaw puste, jeśli go nie potrzebujesz.</p><button id="saveProxy" class="primary">Zapisz i sprawdź GPS</button><div id="proxyFeedback" class="muted"></div></div>
+  <div class="card settings"><h3>O danych</h3><p><b id="dataCounts"></b> zapisanych w aplikacji. Rozkłady działają offline, ale mogą się zdezaktualizować. GPS wymaga internetu i dostępnego serwera MKS. Bez GPS nie podajemy fikcyjnych pozycji.</p><p>Źródło rozkładów: pliki dostarczone przy tworzeniu aplikacji. Mapy: © OpenStreetMap.</p><p>Wersja: 1.1.0 • Aplikacja niezależna, nieoficjalna.</p></div>
+</section>
+</main>
+<div id="stopOverlay" class="overlay hidden"><div class="sheet"><div class="sheet-bar"></div><div class="sheet-top"><div><span class="eyebrow">TABLICZKA PRZYSTANKOWA</span><h2 id="boardTitle"></h2><div id="boardSubtitle" class="muted"></div></div><button id="closeBoard" class="circle">✕</button></div><div class="board-tools"><label>Dzień<select id="dayType"><option>Roboczy</option><option>Roboczy wakacyjny/feryjny</option><option>Sobota</option><option>Niedziele i święta</option></select></label><button class="small-btn" id="boardFavorite">☆ Ulubiony</button><button class="small-btn" id="boardShare">Udostępnij</button></div><div id="boardDepartures"></div></div></div>
+<nav class="bottom" id="nav"><button data-screen="live" class="chosen"><span>◉</span><small>GPS</small></button><button data-screen="stops"><span>⌖</span><small>Przystanki</small></button><button data-screen="lines"><span>≋</span><small>Linie</small></button><button data-screen="route"><span>⇄</span><small>Trasa</small></button><button data-screen="favs"><span>☆</span><small>Ulubione</small></button><button data-screen="settings"><span>⚙</span><small>Więcej</small></button></nav>
+<div id="toast" class="toast hidden" role="status"></div>
+</body></html>

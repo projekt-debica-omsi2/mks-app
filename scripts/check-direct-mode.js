@@ -1,0 +1,10 @@
+const fs = require('fs');
+const java = fs.readFileSync('app/src/main/java/pl/debica/mks/app/MainActivity.java', 'utf8');
+const js = fs.readFileSync('app/src/main/assets/app.js', 'utf8');
+const html = fs.readFileSync('app/src/main/assets/index.html', 'utf8');
+if (!java.includes('return vehicles("");') || java.indexOf('return vehicles("");') > java.indexOf('return vehicles(base);')) throw Error('Połączenie bezpośrednie nie jest priorytetem');
+if (!java.includes('PingService') || !java.includes('GetVehicles') || !java.includes('setRequestProperty("Age"')) throw Error('Brak obsługi oryginalnego protokołu MKS');
+if (js.includes("getStore('mks_proxy_v1','http://e-dębica.pl:8088')")) throw Error('Stary serwer nadal jest wymagany domyślnie');
+if (!js.includes("getStore('mks_proxy_fallback_v2'")) throw Error('Nie znaleziono opcjonalnego proxy');
+if (!html.includes('GPS bez własnego serwera')) throw Error('Brak opisu trybu bezpośredniego w aplikacji');
+console.log('OK: połączenie MKS bezpośrednie pierwsze, proxy opcjonalne.');
