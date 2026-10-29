@@ -13,6 +13,10 @@ if(!workflow.includes('android-actions/setup-android@v4')||!workflow.includes("p
 if(!workflow.includes('upload-artifact@v4')||!workflow.includes('app-debug.apk'))throw Error('Brak wydania APK');
 if(!java.includes('return vehiclesFrom(DIRECT_API, false)')||!java.includes('PingService')||!java.includes('GetVehicles'))throw Error('Brak natywnego API GPS MKS');
 if(!java.includes('setRequestProperty("Age"'))throw Error('Brak nagłówka Age');
+if(!java.includes('GpsXml.parse('))throw Error('GPS powinien korzystać z zgodnego parsera XML');
+if(java.includes('disallow-doctype-decl'))throw Error('Android nie obsługuje opcji Xerces');
+const xmlParser=load('app/src/main/java/pl/debica/mks/app/GpsXml.java');
+if(xmlParser.includes('setFeature(')||!xmlParser.includes('setEntityResolver(')||!xmlParser.includes('<!DOCTYPE'))throw Error('Parser GPS niezgodny lub niebezpieczny');
 if(!manifest.includes('android.permission.INTERNET')||!manifest.includes('android:usesCleartextTraffic="true"'))throw Error('Brak uprawnień HTTP');
 for (const f of ['data.js','style.css','app.js']) if(!html.includes('"'+f+'"'))throw Error('HTML nie ładuje '+f);
 // Symulacja startu JS z minimalnym modelem DOM bez Androida i bez dostępu do sieci.

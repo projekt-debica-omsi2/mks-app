@@ -24,7 +24,6 @@ import org.w3c.dom.Document;
 import org.w3c.dom.Element;
 import org.w3c.dom.NodeList;
 
-import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.InputStream;
 import java.net.HttpURLConnection;
@@ -35,7 +34,6 @@ import java.util.Locale;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicBoolean;
-import javax.xml.parsers.DocumentBuilderFactory;
 
 /** Natywny transport danych MKS: działa poza WebView, więc nie wymaga CORS. */
 public class MainActivity extends Activity {
@@ -102,7 +100,7 @@ public class MainActivity extends Activity {
                 JSONObject result = new JSONObject();
                 try {
                     String body = httpGet(DIRECT_API + "PingService", CITY_TOKEN_SUM + 60);
-                    Document document = xml(body);
+                    Document document = GpsXml.parse(body);
                     String value = document.getDocumentElement().getTextContent().trim();
                     int serverAge = Integer.parseInt(value);
                     if (serverAge < 0 || serverAge > 99_999_999) throw new Exception("Nieprawidłowa wartość Age");
@@ -112,7 +110,7 @@ public class MainActivity extends Activity {
                 } catch (Exception ex) {
                     try {
                         result.put("ok", false);
-                        result.put("message", "Brak odpowiedzi PingService: " + (ex.getMessage() == null ? ex.getClass().getSimpleName() : ex.getMessage()));
+                        result.put("message", "Test PingService nieudany: " + (ex.getMessage() == null ? ex.getClass().getSimpleName() : ex.getMessage()));
                     } catch (Exception ignored) { }
                 }
                 deliver("onMksGpsTest", result);
@@ -161,14 +159,14 @@ public class MainActivity extends Activity {
 
     private JSONObject vehiclesFrom(String endpoint, boolean viaProxy) throws Exception {
         String ping = httpGet(endpoint + "PingService", CITY_TOKEN_SUM + 60);
-        Document doc = xml(ping);
+        Document doc = GpsXml.parse(ping);
         int serverAge;
         try { serverAge = Integer.parseInt(doc.getDocumentElement().getTextContent().trim()); }
         catch (Exception ex) { throw new Exception("Błędna odpowiedź PingService"); }
         if (serverAge < 0 || serverAge > 99_999_999) throw new Exception("Nieprawidłowy Age");
         String suffix = "GetVehicles" + (viaProxy ? "&" : "?")
                 + "cNbLst=&cIdLst=&cRouteLst=&cTrackLst=&cDirLst=&cKrsLst=";
-        Document response = xml(httpGet(endpoint + suffix, CITY_TOKEN_SUM + serverAge));
+        Document response = GpsXml.parse(httpGet(endpoint + suffix, CITY_TOKEN_SUM + serverAge));
         NodeList nodes = response.getElementsByTagName("V");
         if (nodes.getLength() == 0) nodes = response.getElementsByTagNameNS("*", "V");
         JSONArray array = new JSONArray();
@@ -234,17 +232,6 @@ public class MainActivity extends Activity {
             }
         } finally { if (conn != null) conn.disconnect(); }
     }
-    private Document xml(String content) throws Exception {
-        DocumentBuilderFactory factory = DocumentBuilderFactory.newInstance();
-        factory.setNamespaceAware(true);
-        factory.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);
-        factory.setFeature("http://xml.org/sax/features/external-general-entities", false);
-        factory.setFeature("http://xml.org/sax/features/external-parameter-entities", false);
-        factory.setXIncludeAware(false);
-        factory.setExpandEntityReferences(false);
-        return factory.newDocumentBuilder().parse(new ByteArrayInputStream(content.getBytes(StandardCharsets.UTF_8)));
-    }
-
     private void requestLocation() {
         if (checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED
                 && checkSelfPermission(Manifest.permission.ACCESS_COARSE_LOCATION) != PackageManager.PERMISSION_GRANTED) {

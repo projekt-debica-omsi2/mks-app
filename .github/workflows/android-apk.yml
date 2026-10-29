@@ -36,6 +36,12 @@ jobs:
       - name: Test spójności projektu i rozkładów
         run: node scripts/check-data.js && node scripts/check-project.js && node scripts/check-assets.js
 
+      - name: Test parsera GPS (Java 17, bez SDK)
+        run: |
+          mkdir -p /tmp/mks-gps-xml-test
+          javac -encoding UTF-8 -d /tmp/mks-gps-xml-test app/src/main/java/pl/debica/mks/app/GpsXml.java scripts/GpsXmlSmokeTest.java
+          java -cp /tmp/mks-gps-xml-test pl.debica.mks.app.GpsXmlSmokeTest
+
       - name: Zbuduj APK
         run: gradle --no-daemon --stacktrace :app:assembleDebug
 

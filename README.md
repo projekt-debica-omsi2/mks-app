@@ -1,3 +1,18 @@
+# MKS Dębica 2.2.1 — naprawa GPS na Androidzie
+
+**Poprawka błędu z telefonu:** `http://apache.org/xml/features/disallow-doctype-decl`.
+W wersji 2.2 silnik XML Androida mógł zgłaszać ten adres jako błąd podczas przetwarzania odpowiedzi `PingService` i `GetVehicles`. Poprawiony `GpsXml.java` nie ustawia nieobsługiwanej opcji SAX/Xerces, odrzuca niebezpieczne deklaracje DTD/encje i blokuje wczytywanie zasobów zewnętrznych. Ten konkretny błąd parsera nie powinien się już pojawiać.
+
+Znaczniki przystanków na mapie to teraz małe białe kropki z zieloną obwódką, **nie niebieskie ikonki autobusów**. Prawdziwe autobusy otrzymują zielone znaczniki z numerem linii dopiero po otrzymaniu współrzędnych z API.
+
+Pod `scripts/GpsXmlSmokeTest.java` jest test parsera uruchamiany podczas GitHub Actions; testuje odpowiedzi PingService, GetVehicles i odrzucanie DTD.
+
+**Ważne:** poprawka usuwa problem konfiguracji parsera XML; faktyczna dostępność API MKS i pojawienie się autobusów wymagają sprawdzenia po instalacji na telefonie. Rozkłady nadal są kopią offline i mogą nie odzwierciedlać ostatnich zmian.
+
+Instrukcja: rozpakuj ZIP, zastąp pliki repozytorium (pozostaw ukryty `.git`), wykonaj `Commit to main` i `Push origin`. Gdy GitHub Actions skończy się na zielono, pobierz artefakt `MKS-Debica-APK`. Jeśli przy instalacji aktualizacji Android zgłasza konflikt podpisu, usuń wcześniejszą wersję (utracisz zapisane lokalnie ulubione) i zainstaluj nową.
+
+---
+
 # MKS Dębica 2.2.0 — ikony z APK myBus
 
 Wersja projektu z włączonymi ikonami wyodrębnionymi z `mybus.apk` przekazanego przez użytkownika. Ikony są użyte w nawigacji, kartach przystanków, mapie i ustawieniach. **Grafiki nie zapewniają dostępu do GPS**; działanie bezpośredniego API MKS pozostaje do testu na telefonie.

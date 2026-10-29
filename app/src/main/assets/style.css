@@ -11,5 +11,5 @@
 .marker.bus img{height:18px;width:18px;object-fit:contain;flex:none}
 .marker.bus span{display:block;font-weight:900;font-size:12px;line-height:1.1}
 .marker.bus.offline{filter:grayscale(1);opacity:.75}
-.marker.stop{height:20px;width:20px;border:0;border-radius:50%;background:white url('icons/stop-blue.png') center/17px 17px no-repeat;box-shadow:0 1px 5px #0003}
+.marker.stop{height:10px;width:10px;border:2px solid #187a54;border-radius:50%;background:#fff;box-shadow:0 1px 5px #0003}
 .marker.stop:focus-visible,.marker.bus:focus-visible{outline:3px solid #ffcb39;outline-offset:2px}
